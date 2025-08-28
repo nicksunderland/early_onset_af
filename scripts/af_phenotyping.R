@@ -1,18 +1,18 @@
-# Phenotyping the UKBB for HERMES3 GWAS analyses
+# Phenotyping the UKBB for early onset AF analyses
 
-# requirements
+# requirements ====
 library(data.table)
+library(readxl)
 
-# data dir
-data_dir <- file.path(Sys.getenv("DATA_DIR"), "ukbb_81499_20241114")
 
-# read the data
-withdraw  <- fread(file.path(data_dir, "withdraw81499_55_20230915.txt"))
+# read extracted data ====
+data_dir  <- file.path(Sys.getenv("DATA_DIR"), "ukbb_81499_20241114")
 demog     <- fread(file.path(data_dir, "data_participant.tsv"))
 hesin     <- fread(file.path(data_dir, "data_hesin.tsv"))
 diag      <- fread(file.path(data_dir, "data_hesin_diag.tsv"))
 oper      <- fread(file.path(data_dir, "data_hesin_oper.tsv"))
 self_oper <- fread(file.path(data_dir, "data_self_reported_procedures.tsv"))
+
 
 # read the codes
 codes <- fread(system.file("extdata", "hermes_3_codes", "hermes_3_codes_20250702.tsv", package = "heRmes"))

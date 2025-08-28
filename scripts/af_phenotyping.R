@@ -2,41 +2,64 @@
 
 # requirements ====
 library(data.table)
+library(lubridate)
 library(readxl)
+library(yaml)
+source("/home/rstudio-server/early_onset_af/resources/ukbb_extraction_utils.R")
 
 
 # read extracted data ====
-data_dir  <- file.path(Sys.getenv("DATA_DIR"), "ukbb_81499_20241114")
+data_dir  <- "/mnt/project/early_onset_af_data"
 demog     <- fread(file.path(data_dir, "data_participant.tsv"))
 hesin     <- fread(file.path(data_dir, "data_hesin.tsv"))
 diag      <- fread(file.path(data_dir, "data_hesin_diag.tsv"))
 oper      <- fread(file.path(data_dir, "data_hesin_oper.tsv"))
-self_oper <- fread(file.path(data_dir, "data_self_reported_procedures.tsv"))
+gp        <- fread(file.path(data_dir, "data_gp_clinical.tsv"))
 
 
-# read the codes
-codes <- fread(system.file("extdata", "hermes_3_codes", "hermes_3_codes_20250702.tsv", package = "heRmes"))
+# rename data columns ====
+config_fp <- "/home/rstudio-server/early_onset_af/resources/ukbb_extraction_config.yml"
+config    <- read_yaml(config_fp)
+rename_ukbb_cols(demog, config$participant$columns)
+rename_ukbb_cols(hesin, config$hesin$columns)
+rename_ukbb_cols(diag,  config$hes_diag$columns)
+rename_ukbb_cols(oper,  config$hes_oper$columns)
+rename_ukbb_cols(gp,    config$gp_clinical$columns)
+
+
+# read the codes ==== 
+codes_xlsx  <- "/home/rstudio-server/early_onset_af/resources/AF_Phenos_UKBB_Nick.xlsx"
+code_sheets <- excel_sheets(codes_xlsx)
+codes       <- rbindlist(lapply(setNames(code_sheets,code_sheets), function(sheet) {
+  read_excel(codes_xlsx, sheet = sheet)
+}), idcol = "pheno")
+
+
+# clean the codes & add self-reported codes ==== 
+codes <- codes[, .(pheno     = sub("_definition","", tolower(pheno)), 
+                   code_type = tolower(Category), 
+                   code      = sub("\\.", "", Code), 
+                   desc      = Description)]
+
 self_reported_codes <- list(
-  list(name = "Heart Failure",                      code = "1076", code_type = "ukbb_self_reported_illness"),
-  list(name = "Myocardial infarction",              code = "1075", code_type = "ukbb_self_reported_illness"),
-  list(name = "Hypertrophic cardiomyopathy",        code = "1588", code_type = "ukbb_self_reported_illness"),
-  list(name = "Coronary artery bypass grafting",    code = "1095", code_type = "ukbb_self_reported_procedure"),
-  list(name = "Percutaneous coronary intervention", code = "1070", code_type = "ukbb_self_reported_procedure")
+  list(name = "af",            code = "1471", code_type = "ukbb_self_reported_illness",   desc = "atrial fibrillation"),
+  list(name = "cad",           code = "1074", code_type = "ukbb_self_reported_illness",   desc = "angina"),
+  list(name = "cad",           code = "1075", code_type = "ukbb_self_reported_illness",   desc = "heart attack/myocardial infarction"),
+  list(name = "cad",           code = "1070", code_type = "ukbb_self_reported_procedure", desc = "coronary angioplasty (ptca) +/- stent"),
+  list(name = "cad",           code = "1095", code_type = "ukbb_self_reported_procedure", desc = "coronary artery bypass grafts (cabg)"),
+  list(name = "heart_failure", code = "1076", code_type = "ukbb_self_reported_illness",   desc = "heart failure/pulmonary odema"),
+  list(name = "ppm_incident",  code = "1548", code_type = "ukbb_self_reported_procedure", desc = "pacemaker insertion"),
+  list(name = "icd_incident",  code = "1550", code_type = "ukbb_self_reported_procedure", desc = "defibrillator/icd insertion")
 )
-codes <- rbind(codes,
-               data.table(Concept     = paste0(sapply(self_reported_codes, function(x) x$name), " Self Reported"),
-                          Code        = sapply(self_reported_codes, function(x) x$code),
-                          Source      = sapply(self_reported_codes, function(x) x$code_type),
-                          Description = sapply(self_reported_codes, function(x) x$name)))
-codes[, `:=`(code      = Code,
-             code_type = fcase(Source=="ICD10", "icd10",
-                               Source=="ICD9",  "icd9",
-                               Source=="OPCS4", "opcs4",
-                               Source=="ukbb_self_reported_illness", "ukbb_self_reported_illness",
-                               Source=="ukbb_self_reported_procedure", "ukbb_self_reported_procedure"))]
-codes <- codes[!is.na(code_type)]
 
-# ethnicity codes
+codes <- rbind(codes,
+               data.table(pheno     = sapply(self_reported_codes, function(x) x$name),
+                          code_type = sapply(self_reported_codes, function(x) x$code_type),
+                          code      = sapply(self_reported_codes, function(x) x$code),
+                          desc      = sapply(self_reported_codes, function(x) x$name)))
+
+
+# ethnicity codes ====
 ethnicity_codes <- list(
   white                 = 1,
   british               = 1001,
@@ -61,14 +84,16 @@ ethnicity_codes <- list(
 
 
 # long data of codes
-cohort <- demog[, list(eid     = eid,
-                       age     = as.integer(`21022-0.0`),
-                       sex     = factor(`31-0.0`, levels = 0:1, labels = c("female", "male")),
-                       ethnicity = factor(`21000-0.0`, levels = unlist(ethnicity_codes), labels = names(ethnicity_codes)),
-                       ethnicity_group = factor(sub("([0-9])00[0-9]", "\\1", `21000-0.0`), levels = unlist(ethnicity_codes), labels = names(ethnicity_codes)),
-                       genetic_sex = factor(`22001-0.0`, levels = 0:1, labels = c("female", "male")),
-                       genetic_ethnicity = factor(`22006-0.0`, levels = 1, labels = c("caucasian")))]
-cohort[demog, paste0("pc", 1:12) := mget(paste0("i.22009-0.", 1:12)), on = "eid"]
+cohort <- demog[, list(eid               = eid,
+                       dob               = as.Date(assessment_date_1) - years(assessment_age_1),
+                       assessment_date   = as.Date(assessment_date_1), 
+                       assessment_age    = as.integer(assessment_age_1),
+                       sex               = factor(sex, levels = 0:1, labels = c("female", "male")),
+                       ethnicity         = factor(ethnicity_1, levels = unlist(ethnicity_codes), labels = names(ethnicity_codes)),
+                       ethnicity_group   = factor(sub("([0-9])00[0-9]", "\\1", ethnicity_1), levels = unlist(ethnicity_codes), labels = names(ethnicity_codes)),
+                       genetic_sex       = factor(genetic_sex, levels = 0:1, labels = c("female", "male")),
+                       genetic_ethnicity = factor(genetic_ethnicity, levels = 1, labels = c("caucasian")))]
+
 
 
 # check
@@ -164,11 +189,11 @@ combined <- combined[combined[, .I[which.min(date)], by = c("eid", "Concept")]$V
 # add to the cohort
 concepts <- unique(codes$Concept)
 for (g in concepts) {
-
+  
   col_name <- tolower(gsub(" ", "_", gsub("[()]","",g)))
   cohort[combined[Concept == g], paste0(col_name, c("", "_first_date")) := list(TRUE, as.Date(i.date)), on = "eid"]
   cohort[is.na(base::get(col_name)), (col_name) := FALSE]
-
+  
 }
 
 # add the withdrawal flags
@@ -204,9 +229,9 @@ cohort[, self_hcm_first_date := do.call(pmin, c(.SD, na.rm = TRUE)), .SDcols = p
 
 # HF exclusions
 cohort[, hf_exclude := withdrawal == TRUE |
-                       congenital_heart_disease==TRUE |  # all congenital heart disease
-                       (heart_failure==FALSE & (self_hf==TRUE | ischaemic==TRUE | self_isch==TRUE)) | # non-HF but with ischaemic ICD history or self reported heart failure or ischaemic history
-                       (heart_failure==TRUE  & (ischaemic==TRUE & ischaemic_first_date > heart_failure_first_date))] # HF but with first ischaemic event after the HF diagnosis
+         congenital_heart_disease==TRUE |  # all congenital heart disease
+         (heart_failure==FALSE & (self_hf==TRUE | ischaemic==TRUE | self_isch==TRUE)) | # non-HF but with ischaemic ICD history or self reported heart failure or ischaemic history
+         (heart_failure==TRUE  & (ischaemic==TRUE & ischaemic_first_date > heart_failure_first_date))] # HF but with first ischaemic event after the HF diagnosis
 # pheno 1
 cohort[, pheno1 := congenital_heart_disease==FALSE & heart_failure==TRUE]
 
@@ -223,14 +248,14 @@ cohort[, hf_control := hf_exclude==FALSE & pheno1==FALSE & pheno2==FALSE & pheno
 
 # DCM exclusions
 cohort[, cm_exclude := withdrawal == TRUE |
-                       congenital_heart_disease==TRUE |  # all congenital heart disease
-                       hypertrophic_cardiomyopathy==TRUE | self_hcm==TRUE | # all HCM
-                       restrictive_cardiomyopathy==TRUE] # all RCM
+         congenital_heart_disease==TRUE |  # all congenital heart disease
+         hypertrophic_cardiomyopathy==TRUE | self_hcm==TRUE | # all HCM
+         restrictive_cardiomyopathy==TRUE] # all RCM
 
 # pheno 4
 cohort[, pheno4 := cm_exclude==FALSE &
-                   !(dilated_cardiomyopathy==TRUE  & (ischaemic==TRUE & ischaemic_first_date <= dilated_cardiomyopathy_first_date)) & # DCM but with first ischaemic event prior to the DCM diagnosis
-                   dilated_cardiomyopathy==TRUE]
+         !(dilated_cardiomyopathy==TRUE  & (ischaemic==TRUE & ischaemic_first_date <= dilated_cardiomyopathy_first_date)) & # DCM but with first ischaemic event prior to the DCM diagnosis
+         dilated_cardiomyopathy==TRUE]
 
 # pheno 5
 cohort[, pheno5 := cm_exclude==FALSE &
@@ -239,17 +264,17 @@ cohort[, pheno5 := cm_exclude==FALSE &
 
 # CM controls
 cohort[, cm_control := cm_exclude==FALSE &
-                       pheno4==FALSE &
-                       pheno5==FALSE &
-                       ischaemic==FALSE &
-                       self_isch==FALSE]
+         pheno4==FALSE &
+         pheno5==FALSE &
+         ischaemic==FALSE &
+         self_isch==FALSE]
 
 
 # check HF phenotyping
 base_cols <- c("eid", "age", "sex", "ethnicity", "ethnicity_group","genetic_sex", "genetic_ethnicity", paste0("pc",1:12))
 sum_cols <- names(cohort)[!names(cohort) %in% base_cols
                           &
-                          !grepl("date", names(cohort))]
+                            !grepl("date", names(cohort))]
 summary <- data.table (name = c("total", sum_cols), sex = "all", N = c(nrow(cohort), cohort[, .(sapply(.SD, sum)), .SDcols = sum_cols]$V1))
 summary <- rbind(summary,
                  data.table(name = rep(sum_cols, 2), cohort[, .(N = sapply(.SD, sum)), .SDcols = sum_cols, by = "sex"]), fill=TRUE)

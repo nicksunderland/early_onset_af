@@ -1,0 +1,248 @@
+participant:
+  output: early_onset_af_data/data_participant.tsv
+  entity: participant
+  columns:
+    eid:
+      name: eid
+      search: matches
+    assessment_date:
+      name: p53_i
+      search: startswith
+    assessment_age:
+      name: p21003_i
+      search: startswith
+    reason_lost_fu:
+      name: p190
+      search: matches
+    sex:
+      name: p31
+      search: matches
+    sample_collection_date:
+      name: p21842
+      search: startswith
+    weight:
+      name: p21002_i
+      search: startswith
+    height:
+      name: p50_i
+      search: startswith
+    bmi:
+      name: p21001_i
+      search: startswith
+    ethnicity:
+      name: p21000
+      search: startswith
+    genetic_sex:
+      name: p22001
+      search: matches
+    genetic_ethnicity:
+      name: p22006
+      search: matches
+    pc1:
+      name: p22009_a1
+      search: matches
+    pc2:
+      name: p22009_a2
+      search: matches
+    pc3:
+      name: p22009_a3
+      search: matches
+    pc4:
+      name: p22009_a4
+      search: matches
+    pc5:
+      name: p22009_a5
+      search: matches
+    self_rep_ill:
+      name: p20002
+      search: startswith
+    self_rep_ill_year:
+      name: p20008
+      search: startswith
+    self_rep_proc:
+      name: p20004
+      search: startswith
+    self_rep_proc_year:
+      name: p20010
+      search: startswith
+    self_rep_med:
+      name: p20003
+      search: startswith
+    creatinine:
+      name: p30700
+      search: startswith
+    cystatin_c:
+      name: p30720
+      search: startswith
+
+
+hesin:
+  output: early_onset_af_data/data_hesin.tsv
+  entity: hesin
+  columns:
+    eid:
+      name: eid
+      search: matches
+    ins_index:
+      name: ins_index
+      search: matches
+    epistart:
+      name: epistart
+      search: matches
+    admidate:
+      name: admidate
+      search: matches
+
+
+hes_diag:
+  output: early_onset_af_data/data_hesin_diag.tsv
+  entity: hesin_diag
+  columns:
+    eid:
+      name: eid
+      search: matches
+    ins_index:
+      name: ins_index
+      search: matches
+    diag_icd9:
+      name: diag_icd9
+      search: matches
+    diag_icd10:
+      name: diag_icd10
+      search: matches
+
+
+hes_oper:
+  output: early_onset_af_data/data_hesin_oper.tsv
+  entity: hesin_oper
+  columns:
+    eid:
+      name: eid
+      search: matches
+    ins_index:
+      name: ins_index
+      search: matches
+    oper3:
+      name: oper3
+      search: matches
+    oper4:
+      name: oper4
+      search: matches
+
+
+gp_clinical:
+  output: early_onset_af_data/data_gp_clinical.tsv
+  entity: gp_clinical
+  columns:
+    eid:
+      name: eid
+      search: matches
+    data_provider:
+      name: data_provider
+      search: matches
+    date:
+      name: event_dt
+      search: matches
+    read_2:
+      name: read_2
+      search: matches
+    read_3:
+      name: read_3
+      search: matches
+
+
+gp_scripts:
+  output: early_onset_af_data/data_gp_scripts.tsv
+  entity: gp_scripts
+  columns:
+    eid:
+      name: eid
+      search: matches
+    data_provider:
+      name: data_provider
+      search: matches
+    date:
+      name: issue_date
+      search: matches
+    read_2:
+      name: read_2
+      search: matches
+    bnf_code:
+      name: bnf_code
+      search: matches
+    dmd_code:
+      name: dmd_code
+      search: matches
+    drug_name:
+      name: drug_name
+      search: matches
+    quantity:
+      name: quantity
+      search: matches
+
+
+olink_instance_0:
+  output: early_onset_af_data/data_olink_instance_0.tsv
+  entity: olink_instance_0
+  columns:
+    eid:
+      name: eid
+      search: matches
+    ntprobnp:
+      name: ntprobnp
+      search: matches
+    glp1r:
+      name: glp1r
+      search: matches
+    adamts1:
+      name: adamts1
+      search: matches
+    pdzk1:
+      name: pdzk1
+      search: matches
+    lat2:
+      name: lat2
+      search: matches
+    serpinf2:
+      name: serpinf2
+      search: matches
+    pdcd6:
+      name: pdcd6
+      search: matches
+    jpt2:
+      name: jpt2
+      search: matches
+
+olink_instance_2:
+  output: early_onset_af_data/data_olink_instance_2.tsv
+  entity: olink_instance_2
+  columns:
+    eid:
+      name: eid
+      search: matches
+    ntprobnp:
+      name: ntprobnp
+      search: matches
+    lat2:
+      name: lat2
+      search: matches
+    pdcd6:
+      name: pdcd6
+      search: matches
+
+olink_instance_3:
+  output: early_onset_af_data/data_olink_instance_3.tsv
+  entity: olink_instance_3
+  columns:
+    eid:
+      name: eid
+      search: matches
+    ntprobnp:
+      name: ntprobnp
+      search: matches
+    lat2:
+      name: lat2
+      search: matches
+    pdcd6:
+      name: pdcd6
+      search: matches

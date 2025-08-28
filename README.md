@@ -22,3 +22,7 @@ Platform (RAP).
 ## 📈 Analysis
 1. Open: `scripts/af_analysis.R`
 2. Run/edit the script to perform the analyses 
+
+## 📝 Plan
+<img src="resources/hypothesis.png" width="70%">
+<img src="resources/phenotyping_plan.png" width="70%">

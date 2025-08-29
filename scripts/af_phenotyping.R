@@ -20,11 +20,11 @@ gp        <- fread(file.path(data_dir, "data_gp_clinical.tsv"))
 # rename data columns ====
 config_fp <- "/home/rstudio-server/early_onset_af/resources/ukbb_extraction_config.yml"
 config    <- read_yaml(config_fp)
-rename_ukbb_cols(demog, config$participant$columns)
-rename_ukbb_cols(hesin, config$hesin$columns)
-rename_ukbb_cols(diag,  config$hes_diag$columns)
-rename_ukbb_cols(oper,  config$hes_oper$columns)
-rename_ukbb_cols(gp,    config$gp_clinical$columns)
+demog     <- rename_ukbb_cols(demog, config$participant$columns)
+hesin     <- rename_ukbb_cols(hesin, config$hesin$columns)
+diag      <- rename_ukbb_cols(diag,  config$hes_diag$columns)
+oper      <- rename_ukbb_cols(oper,  config$hes_oper$columns)
+gp        <- rename_ukbb_cols(gp,    config$gp_clinical$columns)
 
 
 # read the codes ==== 
@@ -83,9 +83,9 @@ ethnicity_codes <- list(
   other_ethnic_group    = 6)
 
 
-# long data of codes
+# take wanted columns ==== 
 cohort <- demog[, list(eid               = eid,
-                       dob               = as.Date(assessment_date_1) - years(assessment_age_1),
+                       dob               = add_with_rollback(as.Date(assessment_date_1), -years(assessment_age_1)),
                        assessment_date   = as.Date(assessment_date_1), 
                        assessment_age    = as.integer(assessment_age_1),
                        sex               = factor(sex, levels = 0:1, labels = c("female", "male")),
@@ -95,24 +95,24 @@ cohort <- demog[, list(eid               = eid,
                        genetic_ethnicity = factor(genetic_ethnicity, levels = 1, labels = c("caucasian")))]
 
 
-
-# check
+# check dob ====
 stopifnot("Failed to parse some date of births" = all(!is.na(cohort$dob)))
-stopifnot("some ages / dob indicate cohort age <37, is this right?" = all(cohort$dob <= as.Date("1972-01-01")))
+stopifnot("some ages / dob indicate cohort age <37, is this right?" = all(cohort$dob <= as.Date("1972-12-31")))
 
-# self reported illness codes
-self_rep_code_regex <- "20002-[0-9]+\\.[0-9]+"
-self_rep_year_regex <- "20008-[0-9]+\\.[0-9]+"
+
+# self reported illness codes ====
+self_rep_code_regex <- "self_rep_ill_[0-9]+"
+self_rep_year_regex <- "self_rep_ill_year_[0-9]+"
 self_rep_code_cols <- grep(self_rep_code_regex, names(demog), value = TRUE)
 self_rep_year_cols <- grep(self_rep_year_regex, names(demog), value = TRUE)
 demog[, (self_rep_code_cols) := lapply(.SD, as.character), .SDcols = self_rep_code_cols]
 demog[, (self_rep_year_cols) := lapply(.SD, as.numeric),   .SDcols = self_rep_year_cols]
-self_rep_illness <- data.table::melt(demog,
-                                     id.vars = "eid",
-                                     measure = patterns(self_rep_code_regex, self_rep_year_regex),
-                                     variable.name = "element",
-                                     value.name = c("code", "year"),
-                                     na.rm = TRUE)
+self_rep_illness <- melt(demog,
+                         id.vars = "eid",
+                         measure = patterns(self_rep_code_regex, self_rep_year_regex),
+                         variable.name = "element",
+                         value.name = c("code", "year"),
+                         na.rm = TRUE)
 self_rep_illness <- self_rep_illness[year != -1 & year != -3] # unknown / prefer not to answer
 self_rep_illness[, `:=`(date      = lubridate::ymd(paste0(as.character(floor(year)), "-01-01")) + lubridate::days(as.integer(365.25 * (year - floor(year)))),
                         year      = NULL,
@@ -120,14 +120,15 @@ self_rep_illness[, `:=`(date      = lubridate::ymd(paste0(as.character(floor(yea
                         code      = as.character(code),
                         code_type = "ukbb_self_reported_illness")]
 
-# self reported procedure codes
-self_rep_proc_code_regex <- "20004-[0-9]+\\.[0-9]+"
-self_rep_proc_year_regex <- "20010-[0-9]+\\.[0-9]+"
-self_rep_proc_code_cols <- grep(self_rep_proc_code_regex, names(self_oper), value = TRUE)
-self_rep_proc_year_cols <- grep(self_rep_proc_year_regex, names(self_oper), value = TRUE)
-self_oper[, (self_rep_proc_code_cols) := lapply(.SD, as.character), .SDcols = self_rep_proc_code_cols]
-self_oper[, (self_rep_proc_year_cols) := lapply(.SD, as.numeric),   .SDcols = self_rep_proc_year_cols]
-self_rep_oper <- data.table::melt(self_oper,
+
+# self reported procedure codes ====
+self_rep_proc_code_regex <- "self_rep_proc_[0-9]+"
+self_rep_proc_year_regex <- "self_rep_proc_year_[0-9]+"
+self_rep_proc_code_cols <- grep(self_rep_proc_code_regex, names(demog), value = TRUE)
+self_rep_proc_year_cols <- grep(self_rep_proc_year_regex, names(demog), value = TRUE)
+demog[, (self_rep_proc_code_cols) := lapply(.SD, as.character), .SDcols = self_rep_proc_code_cols]
+demog[, (self_rep_proc_year_cols) := lapply(.SD, as.numeric),   .SDcols = self_rep_proc_year_cols]
+self_rep_oper <- data.table::melt(demog,
                                   id.vars = "eid",
                                   measure = patterns(self_rep_proc_code_regex, self_rep_proc_year_regex),
                                   variable.name = "element",
@@ -140,31 +141,33 @@ self_rep_oper[, `:=`(date      = lubridate::ymd(paste0(as.character(floor(year))
                      code      = as.character(code),
                      code_type = "ukbb_self_reported_procedure")]
 
-# join self reported diseases and procedures
+
+# join self reported diseases and procedures ====
 self_rep_illness <- rbind(self_rep_illness, self_rep_oper)
 
-# check self report illness table
+
+# check self report illness table ====
 stopifnot("unable to parse dates for self-reported illness codes" = all(!is.na(self_rep_illness$date)))
 stopifnot("are you sure something happened before 1900?" = all(self_rep_illness$date > as.Date("1900-01-01")))
 
-# get the inpatient diagnosis codes
+
+# get the inpatient diagnosis codes ====
 hesin[is.na(epistart) | epistart == "", epistart := admidate]
-diag[hesin, date := as.Date(i.epistart), on = c("eid(participant - eid)", "ins_index")]
-diag[, eid := `eid(participant - eid)`]
+diag[hesin, date := as.Date(i.epistart), on = c("eid", "ins_index")]
 diag[diag_icd9 == "", diag_icd9 := NA_character_]
 diag[diag_icd10 == "", diag_icd10 := NA_character_]
-diag <- data.table::melt(diag,
-                         id.vars = c("eid", "date"),
-                         measure.vars  = c("diag_icd9", "diag_icd10"),
-                         variable.name = "code_type",
-                         value.name = "code",
-                         na.rm = TRUE)
+diag <- melt(diag,
+             id.vars = c("eid", "date"),
+             measure.vars  = c("diag_icd9", "diag_icd10"),
+             variable.name = "code_type",
+             value.name = "code",
+             na.rm = TRUE)
 diag[, code_type := data.table::fcase(code_type == "diag_icd9", "icd9",
                                       code_type == "diag_icd10", "icd10")]
 
-# get the inpatient procedure codes
-oper[hesin, date := as.Date(i.epistart), on = c("eid(participant - eid)", "ins_index")]
-oper[, eid := `eid(participant - eid)`]
+
+# get the inpatient procedure codes ====
+oper[hesin, date := as.Date(i.epistart), on = c("eid", "ins_index")]
 oper[oper3 == "", oper3 := NA_character_]
 oper[oper4 == "", oper4 := NA_character_]
 oper <- data.table::melt(oper,
@@ -176,146 +179,116 @@ oper <- data.table::melt(oper,
 oper[, code_type := data.table::fcase(code_type == "oper3", "opcs3",
                                       code_type == "oper4", "opcs4")]
 
-# bind together the diagnostic codes
-combined <- rbind(self_rep_illness, diag, oper)
+
+# get the GP diagnosis codes ====
+gp[read_2 == "", read_2 := NA_character_]
+gp[read_3 == "", read_3 := NA_character_]
+gp <- melt(gp,
+           id.vars = c("eid", "date"),
+           measure.vars  = c("read_2", "read_3"),
+           variable.name = "code_type",
+           value.name = "code",
+           na.rm = TRUE)
+gp[, code_type := fcase(code_type == "read_2", "read2",
+                        code_type == "read_3", "read3")]
+
+
+# # death data ====
+# icd_cols  <- grep(paste0(c("^cause_of_death_primary_.*", "^cause_of_death_secondary_.*"), collapse = "|"), names(items), value = TRUE)
+# date_cols <- grep("^date_of_death.*", names(items), value = TRUE)
+# age_cols <- grep("^age_at_death.*", names(items), value = TRUE)
+# for (col in icd_cols) items[is.na(col) | get(col) == "", (col) := NA_character_]
+# items[, (icd_cols) := lapply(.SD, as.character), .SDcols = icd_cols]
+# items[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
+# items[, (age_cols) := lapply(.SD, as.numeric), .SDcols = age_cols]
+# death <- data.table::rbindlist(list(
+#   primary = data.table::melt(items[, mget(c("eid", icd_cols, date_cols, age_cols))],
+#                              id.vars = "eid",
+#                              measure = patterns("^date_of_death","^age_at_death","^cause_of_death_primary"),
+#                              variable.name = "element",
+#                              value.name = c("date_of_death","age_at_death","code"), na.rm = TRUE
+#   ),
+#   secondary = data.table::melt(items[, mget(c("eid", icd_cols, date_cols, age_cols))],
+#                                id.vars = "eid",
+#                                measure = patterns("^date_of_death","^age_at_death", "^cause_of_death_secondary"),
+#                                variable.name = "element",
+#                                value.name = c("date_of_death","age_at_death", "code"), na.rm = TRUE
+#   )),
+#   idcol = "position")
+# death[, source := "death"]
+# death <- death[, .(eid, date = date_of_death, age = age_at_death, code_type="icd10", code, source)]
+
+
+
+# bind together the diagnostic codes ====
+combined <- rbind(death, self_rep_illness, diag, oper)
+
+# 
+# 
+# # add date of death & follow up end ====
+# max_data_date <- max(combined$date)
+# cohort[death[, .SD[which.min(date)], by="eid"], `:=`(death = TRUE, date_of_death = i.date), on="eid"][is.na(death), death := FALSE]
+# cohort[!is.na(date_of_death) & !is.na(date_lost_fu), date_lost_fu := date_of_death]
+# cohort[, date_last_fu := pmin(date_of_death, date_lost_fu, max_data_date, na.rm = T)]
+
+
 
 # read in the codes and annotate
-combined <- codes[combined, on = c("code" = "code", "code_type" = "code_type"), allow.cartesian = TRUE]
-combined <- combined[!is.na(Concept)]
+combined <- codes[combined, on = c("code", "code_type"), allow.cartesian = TRUE]
+combined <- combined[!is.na(pheno)]
 
 # keep only unique, first occurance (in any coding system)
-combined <- combined[combined[, .I[which.min(date)], by = c("eid", "Concept")]$V1]
+combined <- combined[combined[, .I[which.min(date)], by = c("eid", "pheno")]$V1]
 
 # add to the cohort
-concepts <- unique(codes$Concept)
-for (g in concepts) {
+phenos <- unique(codes$pheno)
+for (g in phenos) {
   
   col_name <- tolower(gsub(" ", "_", gsub("[()]","",g)))
-  cohort[combined[Concept == g], paste0(col_name, c("", "_first_date")) := list(TRUE, as.Date(i.date)), on = "eid"]
+  cohort[combined[pheno == g], paste0(col_name, c("", "_first_date")) := list(TRUE, as.Date(i.date)), on = "eid"]
   cohort[is.na(base::get(col_name)), (col_name) := FALSE]
   
 }
 
-# add the withdrawal flags
-cohort[withdraw, withdrawal := TRUE, on = c("eid" = "V1")]
-cohort[is.na(withdrawal), withdrawal := FALSE]
-
-# run phenotyping
-
-# any ischaemic ICD codes
-ischaemic_cols <- c("myocardial_infarction", "coronary_artery_bypass_grafting", "percutaneous_coronary_intervention", "thrombolysis_coronary", "ischaemic_cardiomyopathy")
-cohort[, ischaemic := rowSums(.SD) > 0, .SDcols = ischaemic_cols]
-cohort[, ischaemic_first_date := do.call(pmin, c(.SD, na.rm = TRUE)), .SDcols = paste0(ischaemic_cols, "_first_date")]
-
-# combined NICM ICD codes
-nicm_cols <- c("dilated_cardiomyopathy", "dilated_cardiomyopathy_associated_with", "left_ventricular_systolic_dysfunction")
-cohort[, nicm_comb := rowSums(.SD) > 0, .SDcols = nicm_cols]
-cohort[, nicm_comb_first_date := do.call(pmin, c(.SD, na.rm = TRUE)), .SDcols = paste0(nicm_cols, "_first_date")]
-
-# any ischaemic self reported codes
-self_isch_cols <- c("myocardial_infarction_self_reported", "coronary_artery_bypass_grafting_self_reported", "percutaneous_coronary_intervention_self_reported")
-cohort[, self_isch := rowSums(.SD) > 0, .SDcols = self_isch_cols]
-cohort[, self_isch_first_date := do.call(pmin, c(.SD, na.rm = TRUE)), .SDcols = paste0(self_isch_cols, "_first_date")]
-
-# any self reported HF codes
-self_hf_col = c("heart_failure_self_reported")
-cohort[, self_hf := rowSums(.SD) > 0, .SDcols = self_hf_col]
-cohort[, self_hf_first_date := do.call(pmin, c(.SD, na.rm = TRUE)), .SDcols = paste0(self_hf_col, "_first_date")]
-
-# any self reported HCM codes
-self_hcm_col = c("hypertrophic_cardiomyopathy_self_reported")
-cohort[, self_hcm := rowSums(.SD) > 0, .SDcols = self_hcm_col]
-cohort[, self_hcm_first_date := do.call(pmin, c(.SD, na.rm = TRUE)), .SDcols = paste0(self_hcm_col, "_first_date")]
-
-# HF exclusions
-cohort[, hf_exclude := withdrawal == TRUE |
-         congenital_heart_disease==TRUE |  # all congenital heart disease
-         (heart_failure==FALSE & (self_hf==TRUE | ischaemic==TRUE | self_isch==TRUE)) | # non-HF but with ischaemic ICD history or self reported heart failure or ischaemic history
-         (heart_failure==TRUE  & (ischaemic==TRUE & ischaemic_first_date > heart_failure_first_date))] # HF but with first ischaemic event after the HF diagnosis
-# pheno 1
-cohort[, pheno1 := congenital_heart_disease==FALSE & heart_failure==TRUE]
-
-# pheno 2
-cohort[, pheno2 := hf_exclude==FALSE & heart_failure==TRUE & ischaemic==TRUE]
-
-# pheno 3
-cohort[, pheno3 := hf_exclude==FALSE & heart_failure==TRUE & ischaemic==FALSE]
-
-# HF controls
-cohort[, hf_control := hf_exclude==FALSE & pheno1==FALSE & pheno2==FALSE & pheno3==FALSE]
 
 
 
-# DCM exclusions
-cohort[, cm_exclude := withdrawal == TRUE |
-         congenital_heart_disease==TRUE |  # all congenital heart disease
-         hypertrophic_cardiomyopathy==TRUE | self_hcm==TRUE | # all HCM
-         restrictive_cardiomyopathy==TRUE] # all RCM
 
-# pheno 4
-cohort[, pheno4 := cm_exclude==FALSE &
-         !(dilated_cardiomyopathy==TRUE  & (ischaemic==TRUE & ischaemic_first_date <= dilated_cardiomyopathy_first_date)) & # DCM but with first ischaemic event prior to the DCM diagnosis
-         dilated_cardiomyopathy==TRUE]
-
-# pheno 5
-cohort[, pheno5 := cm_exclude==FALSE &
-         !(nicm_comb==TRUE & (ischaemic==TRUE & ischaemic_first_date <= nicm_comb_first_date)) &  # NICM but with first ischaemic event prior to the NICM diagnosis
-         nicm_comb==TRUE]
-
-# CM controls
-cohort[, cm_control := cm_exclude==FALSE &
-         pheno4==FALSE &
-         pheno5==FALSE &
-         ischaemic==FALSE &
-         self_isch==FALSE]
+# run phenotyping of early onset AF ====
+cohort[, age_first_af := interval(dob, af_first_date) / years(1)]
+cohort[, early_onset_af := interval(dob, af_first_date) / years(1) < 60]
 
 
-# check HF phenotyping
-base_cols <- c("eid", "age", "sex", "ethnicity", "ethnicity_group","genetic_sex", "genetic_ethnicity", paste0("pc",1:12))
-sum_cols <- names(cohort)[!names(cohort) %in% base_cols
-                          &
-                            !grepl("date", names(cohort))]
-summary <- data.table (name = c("total", sum_cols), sex = "all", N = c(nrow(cohort), cohort[, .(sapply(.SD, sum)), .SDcols = sum_cols]$V1))
-summary <- rbind(summary,
-                 data.table(name = rep(sum_cols, 2), cohort[, .(N = sapply(.SD, sum)), .SDcols = sum_cols, by = "sex"]), fill=TRUE)
-summary
-
-# write summary
-fwrite(dcast(summary, name ~ sex, value.var = "N"),
-       file = file.path(Sys.getenv("DATA_DIR"), "ukbb_81499_20241114", "new_hermes3_phenotype_summary.tsv"),
-       sep  = "\t")
+# save cohort ====
+fwrite(cohort, "/home/rstudio-server/cohort.tsv.gz", sep="\t")
+system("dx upload /home/rstudio-server/cohort.tsv.gz --path /early_onset_af_data/cohort.tsv.gz")
 
 
-cat("Total =", summary[name=="total",N], "; Sum (exc/crtl/1) = ", sum(summary[name%in%c("hf_exclude",paste0("pheno1"),"hf_control"), N]), "\n")
-cat("Total =", summary[name=="total",N], "; Sum (exc/crtl/2/3) = ", sum(summary[name%in%c("hf_exclude",paste0("pheno",2:3),"hf_control"), N]), "\n")
-cat("Total =", summary[name=="total",N], "; Sum (exc/crtl/5) = ", sum(summary[name%in%c("cm_exclude",paste0("pheno5"),"cm_control"), N]), "\n")
-
-# write out
-fwrite(cohort[, mget(c(base_cols[base_cols != "eid"],
-                       paste0("pheno", 1:3), "hf_exclude", "hf_control",
-                       paste0("pheno", 4:5), "cm_exclude", "cm_control"))],
-       file = file.path(Sys.getenv("DATA_DIR"), "ukbb_81499_20241114", "hermes3_phenotypes.tsv.gz"),
-       sep  = "\t")
-
-# random test samples
-set.seed(123)
-cohort[hf_exclude==T][sample.int(.N, 3), eid] # 5607008-Y 3463412-Y 3399308-Y
-set.seed(123)
-cohort[hf_control==T][sample.int(.N, 3), eid] # 5617489-Y 1398510-Y 3387157-Y
-set.seed(123)
-cohort[pheno1==T][sample.int(.N, 3), eid] # 5087228-Y 3558314-Y 5669956-Y
-set.seed(123)
-cohort[pheno2==T][sample.int(.N, 3), eid] # 4964821-Y 5145334-Y 4110018-Y
-set.seed(123)
-cohort[pheno3==T][sample.int(.N, 3), eid] # 1535528-Y 1660078-Y 4720288-Y
-set.seed(123)
-cohort[pheno4==T][sample.int(.N, 3), eid] # 4547830-Y 5543541-Y 4762107-Y
-set.seed(123)
-cohort[pheno5==T][sample.int(.N, 3), eid] # 2469121-Y 2659022-Y 1340307-Y
-set.seed(123)
-cohort[cm_control==T][sample.int(.N, 3), eid] # 5335780-Y 1276673-Y 3304835-Y
-set.seed(123)
-cohort[cm_exclude==T][sample.int(.N, 3), eid] # 2946309-Y 4951293-Y 4815931-Y
-
-
-
+# fake dataset for testing ====
+if (FALSE) {
+  set.seed(123)
+  N <- 100000
+  cohort_fake <- data.table(
+    eid = 1:N + 10000,
+    dob = sample(seq(as.Date("1930-01-01"), as.Date("1975-12-31"), by="day"), N, replace=TRUE),
+    assessment_date = sample(seq(as.Date("2006-01-01"), as.Date("2010-12-31"), by="day"), N, replace=TRUE),
+    sex = sample(c("male","female"), N, replace=TRUE),
+    ethnicity = sample(c("british","irish","other european","indian","chinese"), N, replace=TRUE, prob=c(0.6,0.05,0.1,0.15,0.1)),
+    ethnicity_group = sample(c("white","asian","black","mixed"), N, replace=TRUE, prob=c(0.7,0.15,0.1,0.05)),
+    genetic_sex = sample(c("male","female"), N, replace=TRUE),
+    genetic_ethnicity = sample(c("caucasian","african","east_asian","south_asian","other"), N, replace=TRUE, prob=c(0.65,0.1,0.1,0.1,0.05))
+  )
+  cohort_fake[, assessment_age := as.integer(floor(interval(dob, assessment_date) / years(1)))]
+  cohort_fake[, af := rbinom(.N, 1, 0.05) == 1]  # 5% AF prevalence
+  cohort_fake[, af_first_date := fifelse(af, assessment_date - sample(0:5000, .N, replace=TRUE), as.Date(NA))]
+  cohort_fake[, age_first_af := as.numeric(floor(interval(dob, af_first_date) / years(1)))]
+  cohort_fake[is.na(af_first_date), age_first_af := NA_real_]
+  cohort_fake[, early_onset_af := !is.na(age_first_af) & age_first_af < 60]
+  for (col in c("cad","heart_failure","ventricular_arrhythmia","scd","ppm_incident","icd_incident")) {
+    cohort_fake[, (col) := rbinom(.N, 1, 0.1) == 1]
+    cohort_fake[, paste0(col,"_first_date") := fifelse(get(col), assessment_date - sample(0:5000, .N, replace=TRUE), as.Date(NA))]
+  }
+  cohort_fake[1:3]
+  fwrite(cohort, "/home/rstudio-server/fake_cohort.tsv.gz", sep="\t")
+  system("dx upload /home/rstudio-server/fake_cohort.tsv.gz --path /early_onset_af_data/fake_cohort.tsv.gz")
+}

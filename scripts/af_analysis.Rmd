@@ -1,0 +1,76 @@
+---
+title: "AF analysis"
+author: "Nicholas Sunderland"
+date: "2025-08-29"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# requirements ====
+library(data.table)
+library(survival)
+library(survivalAnalysis)
+library(lubridate)
+library(ggplot2)
+
+
+# read the data ====
+#cohort <- fread("/mnt/project/early_onset_af_data/cohort.tsv.gz")
+cohort <- fread("/Users/xx20081/Downloads/fake_cohort.tsv.gz")
+
+
+# clean the data.table factors ====
+cohort[, `:=`(sex             = factor(sex, levels = c("female", "male")), 
+              ethnicity_group = factor(ethnicity_group, levels = c("white", "black_or_black_british", "chinese", "asian_or_asian_british", "other_ethnic_group", "mixed")), 
+              early_onset_af  = factor(fcase(is.na(early_onset_af), "No AF", 
+                                             early_onset_af==FALSE, "AF age \u2265 60", 
+                                             early_onset_af==TRUE, "AF < 60"), levels = c("No AF","AF age \u2265 60","AF < 60")))]
+```
+
+## AF diagnosis counts
+```{r counts}
+ggplot(cohort, aes(x = early_onset_af)) +
+  geom_bar() +
+  geom_text(
+    stat = "count",
+    aes(label = scales::comma(after_stat(count))),
+    vjust = -0.3
+  ) +
+  scale_y_continuous(labels = scales::comma, name="Counts") +
+  theme_minimal() +
+  theme(
+    panel.grid.major.x = element_blank(), 
+    axis.title.x = element_blank()
+  )
+```
+
+## AF age at first diagnosis
+```{r age_onset}
+ggplot(cohort[early_onset_af!="No AF"], aes(x = age_first_af, fill = early_onset_af)) +
+  geom_histogram(bins = 30) +
+  scale_x_continuous(name="Age at first diagnosis") +
+  scale_y_continuous(labels = scales::comma, name="Counts") +
+  theme_minimal() +
+  theme(
+    panel.grid.major.x = element_blank(), 
+    legend.title = element_blank(), 
+    legend.position = "top"
+  ) +
+  facet_wrap(~early_onset_af, scales="free")
+```
+
+## Survival - all-cause mortality
+```{r survival, echo=FALSE}
+surv_tbl <- tmerge(data1   = cohort[!is.na(af_first_date) & af_first_date > assessment_date, ],
+                   data2   = cohort[!is.na(af_first_date) & af_first_date > assessment_date, ],
+                   tstart  = 0,
+                   tstop   = interval(assessment_date, date_last_fu) / dyears(1),
+                           id      = eid,
+                           dead    = event(interval(heart_failure_first_date, date_of_death) / dyears(1), as.integer(death)),
+                           options = list(idname="eid"))
+cox_total_hf <- tidy(coxph(Surv(tstart, tstop, dead) ~ bmi_cat, data = total_hf_cohort, id = eid), exponentiate = TRUE, conf.int = TRUE)
+cox_total_hf
+
+```

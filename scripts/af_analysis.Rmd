@@ -20,10 +20,10 @@ library(broom)
 
 
 # read the data ====
-#cohort   <- fread("/mnt/project/early_onset_af_data/cohort.tsv.gz")
-#outcomes <- fread("/mnt/project/early_onset_af_data/cohort_outcomes.tsv.gz")
-cohort   <- fread("/Users/xx20081/Downloads/fake_cohort.tsv.gz")
-outcomes <- fread("/Users/xx20081/Downloads/fake_cohort_outcomes.tsv.gz")
+cohort   <- fread("/mnt/project/early_onset_af_data/cohort.tsv.gz")
+outcomes <- fread("/mnt/project/early_onset_af_data/cohort_outcomes.tsv.gz")
+#cohort   <- fread("/Users/xx20081/Downloads/fake_cohort.tsv.gz")
+#outcomes <- fread("/Users/xx20081/Downloads/fake_cohort_outcomes.tsv.gz")
 
 # clean the data.table factors ====
 cohort[, `:=`(sex             = factor(sex, levels = c("female", "male")), 

@@ -193,30 +193,30 @@ gp[, code_type := fcase(code_type == "read_2", "read2",
                         code_type == "read_3", "read3")]
 
 
-# # death data ====
-# icd_cols  <- grep(paste0(c("^cause_of_death_primary_.*", "^cause_of_death_secondary_.*"), collapse = "|"), names(items), value = TRUE)
-# date_cols <- grep("^date_of_death.*", names(items), value = TRUE)
-# age_cols <- grep("^age_at_death.*", names(items), value = TRUE)
-# for (col in icd_cols) items[is.na(col) | get(col) == "", (col) := NA_character_]
-# items[, (icd_cols) := lapply(.SD, as.character), .SDcols = icd_cols]
-# items[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
-# items[, (age_cols) := lapply(.SD, as.numeric), .SDcols = age_cols]
-# death <- data.table::rbindlist(list(
-#   primary = data.table::melt(items[, mget(c("eid", icd_cols, date_cols, age_cols))],
-#                              id.vars = "eid",
-#                              measure = patterns("^date_of_death","^age_at_death","^cause_of_death_primary"),
-#                              variable.name = "element",
-#                              value.name = c("date_of_death","age_at_death","code"), na.rm = TRUE
-#   ),
-#   secondary = data.table::melt(items[, mget(c("eid", icd_cols, date_cols, age_cols))],
-#                                id.vars = "eid",
-#                                measure = patterns("^date_of_death","^age_at_death", "^cause_of_death_secondary"),
-#                                variable.name = "element",
-#                                value.name = c("date_of_death","age_at_death", "code"), na.rm = TRUE
-#   )),
-#   idcol = "position")
-# death[, source := "death"]
-# death <- death[, .(eid, date = date_of_death, age = age_at_death, code_type="icd10", code, source)]
+# death data ====
+icd_cols  <- grep(paste0(c("^cause_of_death_primary_.*", "^cause_of_death_secondary_.*"), collapse = "|"), names(items), value = TRUE)
+date_cols <- grep("^date_of_death.*", names(items), value = TRUE)
+age_cols <- grep("^age_at_death.*", names(items), value = TRUE)
+for (col in icd_cols) items[is.na(col) | get(col) == "", (col) := NA_character_]
+items[, (icd_cols) := lapply(.SD, as.character), .SDcols = icd_cols]
+items[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
+items[, (age_cols) := lapply(.SD, as.numeric), .SDcols = age_cols]
+death <- data.table::rbindlist(list(
+  primary = data.table::melt(items[, mget(c("eid", icd_cols, date_cols, age_cols))],
+                             id.vars = "eid",
+                             measure = patterns("^date_of_death","^age_at_death","^cause_of_death_primary"),
+                             variable.name = "element",
+                             value.name = c("date_of_death","age_at_death","code"), na.rm = TRUE
+  ),
+  secondary = data.table::melt(items[, mget(c("eid", icd_cols, date_cols, age_cols))],
+                               id.vars = "eid",
+                               measure = patterns("^date_of_death","^age_at_death", "^cause_of_death_secondary"),
+                               variable.name = "element",
+                               value.name = c("date_of_death","age_at_death", "code"), na.rm = TRUE
+  )),
+  idcol = "position")
+death[, source := "death"]
+death <- death[, .(eid, date = date_of_death, age = age_at_death, code_type="icd10", code, source)]
 
 
 

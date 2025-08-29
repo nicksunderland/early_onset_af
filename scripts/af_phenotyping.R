@@ -85,14 +85,18 @@ ethnicity_codes <- list(
 
 # take wanted columns ==== 
 cohort <- demog[, list(eid               = eid,
-                       dob               = add_with_rollback(as.Date(assessment_date_1), -years(assessment_age_1)),
+                       dob               = as.Date(paste(year_of_birth, month_of_birth, "01", sep = "-"), format = "%Y-%m-%d"),
                        assessment_date   = as.Date(assessment_date_1), 
                        assessment_age    = as.integer(assessment_age_1),
+                       date_lost_fu      = as.Date(date_lost_fu),
+                       reason_lost_fu    = factor(reason_lost_fu, levels = 1:5, labels = c("death_reported_by_relative", "nhs_indicate_lost", "emigrated", "emigrated", "withdrawal")),
                        sex               = factor(sex, levels = 0:1, labels = c("female", "male")),
                        ethnicity         = factor(ethnicity_1, levels = unlist(ethnicity_codes), labels = names(ethnicity_codes)),
                        ethnicity_group   = factor(sub("([0-9])00[0-9]", "\\1", ethnicity_1), levels = unlist(ethnicity_codes), labels = names(ethnicity_codes)),
                        genetic_sex       = factor(genetic_sex, levels = 0:1, labels = c("female", "male")),
-                       genetic_ethnicity = factor(genetic_ethnicity, levels = 1, labels = c("caucasian")))]
+                       genetic_ethnicity = factor(genetic_ethnicity, levels = 1, labels = c("caucasian")), 
+                       smoking_status    = factor(smoking_status_1, levels = 0:2, labels = c("never", "previous", "current")),
+                       alcohol_intake    = factor(alcohol_intake_1, levels = 1:6, labels = c("Daily or almost daily", "Three or four times a week", "Once or twice a week", "One to three times a month", "Special occasions only", "Never")))]
 
 
 # check dob ====
@@ -144,6 +148,7 @@ self_rep_oper[, `:=`(date      = lubridate::ymd(paste0(as.character(floor(year))
 
 # join self reported diseases and procedures ====
 self_rep_illness <- rbind(self_rep_illness, self_rep_oper)
+self_rep_illness[, source := "ukbb"]
 
 
 # check self report illness table ====
@@ -164,6 +169,7 @@ diag <- melt(diag,
              na.rm = TRUE)
 diag[, code_type := data.table::fcase(code_type == "diag_icd9", "icd9",
                                       code_type == "diag_icd10", "icd10")]
+diag[, source := "hes"]
 
 
 # get the inpatient procedure codes ====
@@ -178,6 +184,7 @@ oper <- data.table::melt(oper,
                          na.rm = TRUE)
 oper[, code_type := data.table::fcase(code_type == "oper3", "opcs3",
                                       code_type == "oper4", "opcs4")]
+oper[, source := "hes"]
 
 
 # get the GP diagnosis codes ====
@@ -191,67 +198,68 @@ gp <- melt(gp,
            na.rm = TRUE)
 gp[, code_type := fcase(code_type == "read_2", "read2",
                         code_type == "read_3", "read3")]
+gp[, source := "gp"]
+gp[, date := as.Date(date)]
 
 
 # death data ====
-icd_cols  <- grep(paste0(c("^cause_of_death_primary_.*", "^cause_of_death_secondary_.*"), collapse = "|"), names(items), value = TRUE)
-date_cols <- grep("^date_of_death.*", names(items), value = TRUE)
-age_cols <- grep("^age_at_death.*", names(items), value = TRUE)
-for (col in icd_cols) items[is.na(col) | get(col) == "", (col) := NA_character_]
-items[, (icd_cols) := lapply(.SD, as.character), .SDcols = icd_cols]
-items[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
-items[, (age_cols) := lapply(.SD, as.numeric), .SDcols = age_cols]
-death <- data.table::rbindlist(list(
-  primary = data.table::melt(items[, mget(c("eid", icd_cols, date_cols, age_cols))],
-                             id.vars = "eid",
-                             measure = patterns("^date_of_death","^age_at_death","^cause_of_death_primary"),
-                             variable.name = "element",
-                             value.name = c("date_of_death","age_at_death","code"), na.rm = TRUE
+icd_cols  <- grep(paste0(c("^cause_of_death_primary_.*", "^cause_of_death_secondary_.*"), collapse = "|"), names(demog), value = TRUE)
+date_cols <- grep("^date_of_death.*", names(demog), value = TRUE)
+for (col in icd_cols) demog[is.na(col) | get(col) == "", (col) := NA_character_]
+demog[, (icd_cols) := lapply(.SD, as.character), .SDcols = icd_cols]
+demog[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
+death <- rbindlist(list(
+  primary = melt(demog[, mget(c("eid", icd_cols, date_cols))],
+                 id.vars = "eid",
+                 measure = patterns("^date_of_death","^cause_of_death_primary"),
+                 variable.name = "element",
+                 value.name = c("date_of_death","code"), na.rm = TRUE
   ),
-  secondary = data.table::melt(items[, mget(c("eid", icd_cols, date_cols, age_cols))],
-                               id.vars = "eid",
-                               measure = patterns("^date_of_death","^age_at_death", "^cause_of_death_secondary"),
-                               variable.name = "element",
-                               value.name = c("date_of_death","age_at_death", "code"), na.rm = TRUE
+  secondary = melt(demog[, mget(c("eid", icd_cols, date_cols))],
+                   id.vars = "eid",
+                   measure = patterns("^date_of_death", "^cause_of_death_secondary"),
+                   variable.name = "element",
+                   value.name = c("date_of_death", "code"), na.rm = TRUE
   )),
   idcol = "position")
-death[, source := "death"]
-death <- death[, .(eid, date = date_of_death, age = age_at_death, code_type="icd10", code, source)]
-
+death <- death[, .(eid, code, date = date_of_death, code_type="icd10", source = "death")]
 
 
 # bind together the diagnostic codes ====
-combined <- rbind(death, self_rep_illness, diag, oper)
+combined <- rbindlist(list(death, self_rep_illness, diag, oper, gp), use.names=TRUE)
 
-# 
-# 
-# # add date of death & follow up end ====
-# max_data_date <- max(combined$date)
-# cohort[death[, .SD[which.min(date)], by="eid"], `:=`(death = TRUE, date_of_death = i.date), on="eid"][is.na(death), death := FALSE]
-# cohort[!is.na(date_of_death) & !is.na(date_lost_fu), date_lost_fu := date_of_death]
-# cohort[, date_last_fu := pmin(date_of_death, date_lost_fu, max_data_date, na.rm = T)]
 
+# check and remove date errors - in the future ====
+cat(combined[date > Sys.Date(), .N], "diagnoses coded as in the future - removing\n")
+combined <- combined[date < Sys.Date(), ] 
+
+
+# add date of death & follow up end ====
+max_data_date <- max(combined$date, na.rm=TRUE)
+cohort[death[, .SD[which.min(date)], by="eid"], `:=`(death = TRUE, date_of_death = i.date), on="eid"][is.na(death), death := FALSE]
+cohort[!is.na(date_of_death) & !is.na(date_lost_fu), date_lost_fu := date_of_death]
+cohort[, date_last_fu := pmin(date_of_death, date_lost_fu, max_data_date, na.rm = T)]
 
 
 # read in the codes and annotate
 combined <- codes[combined, on = c("code", "code_type"), allow.cartesian = TRUE]
 combined <- combined[!is.na(pheno)]
+combined[, found_in := paste0(code_type, "[", source, "]")]
+combined[, found_in := paste0(unique(found_in), collapse=";"), by="eid"]
 
-# keep only unique, first occurance (in any coding system)
-combined <- combined[combined[, .I[which.min(date)], by = c("eid", "pheno")]$V1]
 
-# add to the cohort
+# annotate first AF 
+cohort[combined[combined[, .I[which.min(date)], by = c("eid", "pheno")]$V1][pheno == "af"], 
+       c("af", "af_first_date", "af_found_in") := list(TRUE, as.Date(i.date), found_in), on = "eid"]
+cohort[is.na(af), af := FALSE]
+
+
+# add death to the cohort ====
 phenos <- unique(codes$pheno)
 for (g in phenos) {
-  
-  col_name <- tolower(gsub(" ", "_", gsub("[()]","",g)))
-  cohort[combined[pheno == g], paste0(col_name, c("", "_first_date")) := list(TRUE, as.Date(i.date)), on = "eid"]
-  cohort[is.na(base::get(col_name)), (col_name) := FALSE]
-  
+  cohort[, paste0("death_", g) := FALSE]
+  cohort[combined[source=="death" & pheno == g], paste0("death_", g) := TRUE, on = "eid"]
 }
-
-
-
 
 
 # run phenotyping of early onset AF ====
@@ -260,8 +268,18 @@ cohort[, early_onset_af := interval(dob, af_first_date) / years(1) <= 60]
 
 
 # save cohort ====
+setcolorder(cohort, grep("af", names(cohort), value=T), after = "date_last_fu")
 fwrite(cohort, "/home/rstudio-server/cohort.tsv.gz", sep="\t")
 system("dx upload /home/rstudio-server/cohort.tsv.gz --path /early_onset_af_data/cohort.tsv.gz")
+
+
+# save outcomes ====
+fwrite(combined, "/home/rstudio-server/cohort_outcomes.tsv.gz", sep="\t")
+system("dx upload /home/rstudio-server/cohort_outcomes.tsv.gz --path /early_onset_af_data/cohort_outcomes.tsv.gz")
+
+
+
+
 
 
 # fake dataset for testing ====
@@ -278,17 +296,82 @@ if (FALSE) {
     genetic_sex = sample(c("male","female"), N, replace=TRUE),
     genetic_ethnicity = sample(c("caucasian","african","east_asian","south_asian","other"), N, replace=TRUE, prob=c(0.65,0.1,0.1,0.1,0.05))
   )
+  cohort_fake[, smoking_status := sample(c("never","former","current"), N, replace=TRUE, prob=c(0.5,0.3,0.2))]
+  cohort_fake[, alcohol_intake := sample(c("none","low","moderate","high"), N, replace=TRUE, prob=c(0.1,0.4,0.4,0.1))]
   cohort_fake[, assessment_age := as.integer(floor(interval(dob, assessment_date) / years(1)))]
-  cohort_fake[, af := rbinom(.N, 1, 0.05) == 1]  # 5% AF prevalence
+  cohort_fake[, death := rbinom(.N, 1, 0.1) == 1]
+  cohort_fake[, date_of_death := fifelse(death, assessment_date + sample(0:5000, .N, replace=TRUE), as.Date(NA))]
+  cohort_fake[, date_last_fu := pmax(date_of_death, assessment_date + sample(0:5000, .N, replace=TRUE), na.rm=TRUE)]
+  cohort_fake[, date_lost_fu := fifelse(runif(.N) < 0.05, assessment_date + sample(0:5000, .N, replace=TRUE), as.Date(NA))]
+  cohort_fake[, reason_lost_fu := fifelse(!is.na(date_lost_fu), sample(c("moved","withdrawn"), .N, replace=TRUE), NA_character_)]
+  
+  cohort_fake[, af := rbinom(.N, 1, 0.05) == 1]
   cohort_fake[, af_first_date := fifelse(af, assessment_date - sample(0:5000, .N, replace=TRUE), as.Date(NA))]
   cohort_fake[, age_first_af := as.numeric(floor(interval(dob, af_first_date) / years(1)))]
   cohort_fake[is.na(af_first_date), age_first_af := NA_real_]
   cohort_fake[, early_onset_af := !is.na(age_first_af) & age_first_af < 60]
-  for (col in c("cad","heart_failure","ventricular_arrhythmia","scd","ppm_incident","icd_incident")) {
-    cohort_fake[, (col) := rbinom(.N, 1, 0.1) == 1]
-    cohort_fake[, paste0(col,"_first_date") := fifelse(get(col), assessment_date - sample(0:5000, .N, replace=TRUE), as.Date(NA))]
+  cohort_fake[, af_found_in := sample(c("primary_care","hospital_records"), .N, replace=TRUE)]
+  
+  cohort_fake[, death := rbinom(.N, 1, 0.1) == 1]
+  cohort_fake[, date_of_death := fifelse(death, assessment_date + sample(0:5000, .N, replace=TRUE), as.Date(NA))]
+  cohort_fake[, date_last_fu := pmax(date_of_death, assessment_date + sample(0:5000, .N, replace=TRUE), na.rm=TRUE)]
+  cohort_fake[, date_lost_fu := fifelse(runif(.N) < 0.05, assessment_date + sample(0:5000, .N, replace=TRUE), as.Date(NA))]
+  cohort_fake[, reason_lost_fu := fifelse(!is.na(date_lost_fu), sample(c("moved","withdrawn"), .N, replace=TRUE), NA_character_)]
+  
+  # Cardiovascular deaths
+  cv_cols <- c("death_af", "death_cad","death_heart_failure","death_ventricular_arrhythmia",
+               "death_scd","death_ppm_incident","death_icd_incident")
+  for (col in cv_cols) {
+    cohort_fake[, (col) := rbinom(.N, 1, 0.05) == 1]
   }
   cohort_fake[1:3]
-  fwrite(cohort, "/home/rstudio-server/fake_cohort.tsv.gz", sep="\t")
+  fwrite(cohort_fake, "/home/rstudio-server/fake_cohort.tsv.gz", sep="\t")
   system("dx upload /home/rstudio-server/fake_cohort.tsv.gz --path /early_onset_af_data/fake_cohort.tsv.gz")
+  
+  
+  
+  set.seed(123)
+  N <- 100000  # number of rows in fake combined dataset
+  
+  # Define some fake phenotypes, codes, and descriptions
+  phenos <- c("af", "cad", "heart_failure", "ventricular_arrhythmia", "scd")
+  code_types <- c("icd10", "read2", "read3")
+  codes <- list(
+    af = c("I480","I489"),
+    cad = c("I252"),
+    heart_failure = c("I500","I501"),
+    ventricular_arrhythmia = c("I489"),
+    scd = c("I462","I490")
+  )
+  descs <- list(
+    af = c("Paroxysmal atrial fibrillation","Unspecified atrial fibrillation and atrial flutter"),
+    cad = c("Old myocardial infarction"),
+    heart_failure = c("Congestive heart failure","Left ventricular failure, unspecified"),
+    ventricular_arrhythmia = c("Cardiac arrest, cause unspecified"),
+    scd = c("Sudden cardiac death","Ventricular fibrillation")
+  )
+  sources <- c("death","hes","ukbb_self_reported_illness","ukbb_self_reported_procedure")
+  
+  # Generate fake combined table
+  combined_fake <- data.table(
+    pheno = sample(phenos, N, replace=TRUE),
+    code_type = sample(code_types, N, replace=TRUE),
+    eid = sample(1:N + 10000, N, replace=TRUE),
+    date = sample(seq(as.Date("2006-01-01"), as.Date("2023-08-01"), by="day"), N, replace=TRUE),
+    source = sample(sources, N, replace=TRUE)
+  )
+  
+  # Assign code and description based on phenotype
+  combined_fake[, code := sapply(pheno, function(x) sample(codes[[x]], 1))]
+  combined_fake[, desc := sapply(pheno, function(x) sample(descs[[x]], 1))]
+  
+  # Generate a fake found_in column: combination of code_type[source]
+  combined_fake[, found_in := paste0(code_type, "[", source, "]")]
+  
+  # Inspect
+  head(combined_fake)
+  
+  fwrite(combined_fake, "/home/rstudio-server/fake_cohort_outcomes.tsv.gz", sep="\t")
+  system("dx upload /home/rstudio-server/fake_cohort_outcomes.tsv.gz --path /early_onset_af_data/fake_cohort_outcomes.tsv.gz")
+  
 }

@@ -11,19 +11,24 @@ knitr::opts_chunk$set(echo = TRUE)
 # requirements ====
 library(data.table)
 library(survival)
+library(survminer)
 library(survivalAnalysis)
 library(lubridate)
 library(ggplot2)
+library(broom)
 
 
 # read the data ====
-#cohort <- fread("/mnt/project/early_onset_af_data/cohort.tsv.gz")
-cohort <- fread("/Users/xx20081/Downloads/fake_cohort.tsv.gz")
-
+#cohort   <- fread("/mnt/project/early_onset_af_data/cohort.tsv.gz")
+#outcomes <- fread("/mnt/project/early_onset_af_data/cohort_outcomes.tsv.gz")
+cohort   <- fread("/Users/xx20081/Downloads/fake_cohort.tsv.gz")
+outcomes <- fread("/Users/xx20081/Downloads/fake_cohort_outcomes.tsv.gz")
 
 # clean the data.table factors ====
 cohort[, `:=`(sex             = factor(sex, levels = c("female", "male")), 
               ethnicity_group = factor(ethnicity_group, levels = c("white", "black_or_black_british", "chinese", "asian_or_asian_british", "other_ethnic_group", "mixed")), 
+              smoking_status  = factor(smoking_status, levels = c("never", "previous", "current")),
+              alcohol_intake  = factor(alcohol_intake, levels = c("Daily or almost daily", "Three or four times a week", "Once or twice a week", "One to three times a month", "Special occasions only", "Never")),
               early_onset_af  = factor(fcase(is.na(early_onset_af), "No AF", 
                                              early_onset_af==FALSE, "AF age > 60", 
                                              early_onset_af==TRUE, "AF \u2264 60"), levels = c("No AF","AF age > 60","AF \u2264 60")))]
@@ -85,8 +90,7 @@ ggsurvplot(survfit(Surv(tstop, death) ~ early_onset_af, data = surv_tbl, id = ei
 
 
 hazard_ratios <- tidy(coxph(Surv(tstart, tstop, dead) ~ early_onset_af, data = surv_tbl, id = eid), exponentiate = TRUE, conf.int = TRUE)
-hazard_ratios
-
+kableExtra::kable(hazard_ratios)
 ```
 
 
@@ -100,8 +104,19 @@ surv_tbl <- tmerge(data1   = cohort[!is.na(af_first_date) & af_first_date > asse
                    dead    = event(interval(af_first_date, date_of_death) / dyears(1), as.integer(death)),
                    options = list(idname="eid"))
 
+surv_tbl <- tmerge(data1   = surv_tbl,
+                   data2   = (outcomes
+                              [pheno=="heart_failure" & source=="hes"]
+                              [cohort, af_first_date := i.af_first_date, on="eid"]
+                              [date > af_first_date]
+                              [, .SD[which.min(date)], by="eid"]
+                             ),
+                   id      = eid,
+                   hf_adm  = event(interval(af_first_date, date) / dyears(1), as.integer(!is.na(pheno))),
+                   options = list(idname="eid"))
+
 # plot KM curves ====
-ggsurvplot(survfit(Surv(tstop, death) ~ early_onset_af, data = surv_tbl, id = eid),
+ggsurvplot(survfit(Surv(tstop, hf_adm) ~ early_onset_af, data = surv_tbl, id = eid),
            data = surv_tbl,
            risk.table = FALSE,
            conf.int = FALSE,
@@ -113,6 +128,6 @@ ggsurvplot(survfit(Surv(tstop, death) ~ early_onset_af, data = surv_tbl, id = ei
 
 
 hazard_ratios <- tidy(coxph(Surv(tstart, tstop, dead) ~ early_onset_af, data = surv_tbl, id = eid), exponentiate = TRUE, conf.int = TRUE)
-hazard_ratios
+kableExtra::kable(hazard_ratios)
 
 ```

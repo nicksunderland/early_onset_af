@@ -5,12 +5,21 @@ participant:
     eid:
       name: eid
       search: matches
+    year_of_birth: 
+      name: p34
+      search: matches
+    month_of_birth: 
+      name: p52
+      search: matches
     assessment_date:
       name: p53_i
       search: startswith
     assessment_age:
       name: p21003_i
       search: startswith
+    date_lost_fu:
+      name: p191
+      search: matches
     reason_lost_fu:
       name: p190
       search: matches
@@ -38,21 +47,12 @@ participant:
     genetic_ethnicity:
       name: p22006
       search: matches
-    pc1:
-      name: p22009_a1
-      search: matches
-    pc2:
-      name: p22009_a2
-      search: matches
-    pc3:
-      name: p22009_a3
-      search: matches
-    pc4:
-      name: p22009_a4
-      search: matches
-    pc5:
-      name: p22009_a5
-      search: matches
+    smoking_status: 
+      name: p20116_i
+      search: startswith
+    alcohol_intake: 
+      name: p1558_i
+      search: startswith
     self_rep_ill:
       name: p20002
       search: startswith
@@ -69,19 +69,13 @@ participant:
       name: p20003
       search: startswith
     date_of_death:
-      name: p40000
+      name: p40000_i
       search: startswith
     cause_of_death_primary: 
-      name: p40001
+      name: p40001_i
       search: startswith
     cause_of_death_secondary: 
-      name: p40002
-      search: startswith
-    creatinine:
-      name: p30700
-      search: startswith
-    cystatin_c:
-      name: p30720
+      name: p40002_i
       search: startswith
 
 

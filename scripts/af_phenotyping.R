@@ -256,7 +256,7 @@ for (g in phenos) {
 
 # run phenotyping of early onset AF ====
 cohort[, age_first_af := interval(dob, af_first_date) / years(1)]
-cohort[, early_onset_af := interval(dob, af_first_date) / years(1) < 60]
+cohort[, early_onset_af := interval(dob, af_first_date) / years(1) <= 60]
 
 
 # save cohort ====

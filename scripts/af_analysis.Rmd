@@ -25,8 +25,8 @@ cohort <- fread("/Users/xx20081/Downloads/fake_cohort.tsv.gz")
 cohort[, `:=`(sex             = factor(sex, levels = c("female", "male")), 
               ethnicity_group = factor(ethnicity_group, levels = c("white", "black_or_black_british", "chinese", "asian_or_asian_british", "other_ethnic_group", "mixed")), 
               early_onset_af  = factor(fcase(is.na(early_onset_af), "No AF", 
-                                             early_onset_af==FALSE, "AF age \u2265 60", 
-                                             early_onset_af==TRUE, "AF < 60"), levels = c("No AF","AF age \u2265 60","AF < 60")))]
+                                             early_onset_af==FALSE, "AF age > 60", 
+                                             early_onset_af==TRUE, "AF \u2264 60"), levels = c("No AF","AF age > 60","AF \u2264 60")))]
 ```
 
 ## AF diagnosis counts
@@ -63,14 +63,56 @@ ggplot(cohort[early_onset_af!="No AF"], aes(x = age_first_af, fill = early_onset
 
 ## Survival - all-cause mortality
 ```{r survival, echo=FALSE}
-surv_tbl <- tmerge(data1   = cohort[!is.na(af_first_date) & af_first_date > assessment_date, ],
-                   data2   = cohort[!is.na(af_first_date) & af_first_date > assessment_date, ],
+# create survival table ====
+surv_tbl <- tmerge(data1   = cohort[!is.na(af_first_date) & af_first_date > assessment_date & af_first_date < date_last_fu, ],
+                   data2   = cohort[!is.na(af_first_date) & af_first_date > assessment_date & af_first_date < date_last_fu, ],
                    tstart  = 0,
-                   tstop   = interval(assessment_date, date_last_fu) / dyears(1),
-                           id      = eid,
-                           dead    = event(interval(heart_failure_first_date, date_of_death) / dyears(1), as.integer(death)),
-                           options = list(idname="eid"))
-cox_total_hf <- tidy(coxph(Surv(tstart, tstop, dead) ~ bmi_cat, data = total_hf_cohort, id = eid), exponentiate = TRUE, conf.int = TRUE)
-cox_total_hf
+                   tstop   = interval(af_first_date, date_last_fu) / dyears(1),
+                   id      = eid,
+                   dead    = event(interval(af_first_date, date_of_death) / dyears(1), as.integer(death)),
+                   options = list(idname="eid"))
+
+# plot KM curves ====
+ggsurvplot(survfit(Surv(tstop, death) ~ early_onset_af, data = surv_tbl, id = eid),
+           data = surv_tbl,
+           risk.table = FALSE,
+           conf.int = FALSE,
+           cumcensor = FALSE,
+           pval = FALSE, 
+           #xlim = c(0, 12), 
+           censor.shape = NA) #+
+  #lims(y = c(0.6, 1))
+
+
+hazard_ratios <- tidy(coxph(Surv(tstart, tstop, dead) ~ early_onset_af, data = surv_tbl, id = eid), exponentiate = TRUE, conf.int = TRUE)
+hazard_ratios
+
+```
+
+
+```{r survival_hf, echo=FALSE}
+# create survival table ====
+surv_tbl <- tmerge(data1   = cohort[!is.na(af_first_date) & af_first_date > assessment_date & af_first_date < date_last_fu, ],
+                   data2   = cohort[!is.na(af_first_date) & af_first_date > assessment_date & af_first_date < date_last_fu, ],
+                   tstart  = 0,
+                   tstop   = interval(af_first_date, date_last_fu) / dyears(1),
+                   id      = eid,
+                   dead    = event(interval(af_first_date, date_of_death) / dyears(1), as.integer(death)),
+                   options = list(idname="eid"))
+
+# plot KM curves ====
+ggsurvplot(survfit(Surv(tstop, death) ~ early_onset_af, data = surv_tbl, id = eid),
+           data = surv_tbl,
+           risk.table = FALSE,
+           conf.int = FALSE,
+           cumcensor = FALSE,
+           pval = FALSE, 
+           #xlim = c(0, 12), 
+           censor.shape = NA) #+
+  #lims(y = c(0.6, 1))
+
+
+hazard_ratios <- tidy(coxph(Surv(tstart, tstop, dead) ~ early_onset_af, data = surv_tbl, id = eid), exponentiate = TRUE, conf.int = TRUE)
+hazard_ratios
 
 ```

@@ -2,7 +2,7 @@
 title: "AF analysis"
 author: "Nicholas Sunderland"
 date: "2025-08-29"
-output: pdf_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -94,7 +94,7 @@ hazard_ratios <- tidy(coxph(Surv(tstart, tstop, dead) ~ early_onset_af, data = s
 kableExtra::kable(hazard_ratios)
 ```
 
-
+## Survival - HF admission
 ```{r survival_hf, echo=FALSE}
 # create survival table ====
 surv_tbl <- tmerge(data1   = cohort[!is.na(af_first_date) & af_first_date > assessment_date & af_first_date < date_last_fu, ],
@@ -128,7 +128,11 @@ ggsurvplot(survfit(Surv(tstop, hf_adm) ~ early_onset_af, data = surv_tbl, id = e
   #lims(y = c(0.6, 1))
 
 
-hazard_ratios <- tidy(coxph(Surv(tstart, tstop, dead) ~ early_onset_af, data = surv_tbl, id = eid), exponentiate = TRUE, conf.int = TRUE)
+hazard_ratios <- tidy(coxph(Surv(tstart, tstop, hf_adm) ~ early_onset_af, data = surv_tbl, id = eid), exponentiate = TRUE, conf.int = TRUE)
 kableExtra::kable(hazard_ratios)
 
+# save & upload to project space
+if (FALSE) {
+  system("dx upload /home/rstudio-server/early_onset_af/scripts/af_analysis.html --path /early_onset_af_data/af_analysis.html")
+}
 ```

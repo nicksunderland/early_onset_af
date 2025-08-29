@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # requirements ====
 library(data.table)
+library(R.utils)
 library(survival)
 library(survminer)
 library(survivalAnalysis)
